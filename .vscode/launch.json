@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Rodar Assistente",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/run_assistant.py",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Testar Voz",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/test_voice.py",
+      "console": "integratedTerminal"
+    }
+  ]
+}
