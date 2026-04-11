@@ -162,7 +162,8 @@ weasel==1.0.0
 Werkzeug==3.1.8
 wrapt==2.1.2
 yarl==1.23.0
-
+#####################
 TTS==0.22.0
 transformers==4.36.2
 pyttsx3==2.99
+torch==2.5.1

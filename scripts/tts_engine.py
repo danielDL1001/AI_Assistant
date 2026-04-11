@@ -4,7 +4,11 @@ import queue
 import tempfile
 import threading
 from pathlib import Path
+import torch
 from TTS.api import TTS
+from TTS.tts.configs.xtts_config import XttsConfig
+from TTS.tts.models.xtts import XttsAudioConfig
+from TTS.config.shared_configs import BaseDatasetConfig
 from scripts.config import REFERENCE_AUDIO_PATH, VOICE_MODE
 
 
@@ -19,6 +23,11 @@ class TTSEngine:
         if VOICE_MODE == "clone":
             if self.logger:
                 self.logger.info("Loading XTTS voice cloning model...")
+            torch.serialization.add_safe_globals([
+                XttsConfig,
+                XttsAudioConfig,
+                BaseDatasetConfig
+            ])
             self.tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
             self.engine = None
         else:
