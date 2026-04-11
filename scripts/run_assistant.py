@@ -1,14 +1,18 @@
 import logging
+import threading
+import time
 from collections import deque
 
-from scripts.formatter import format_speech
+from scripts.config import RESUME_COLLECTION_SECONDS, SUSPEND_GAP_SECONDS
+from scripts.formatter import format_rest_summary, format_speech
+
 from scripts.models import NotificationData
-from scripts.notification_listener import LinuxNotificationListener
+from scripts.notification_listener import create_notification_listener
 from scripts.tts_engine import TTSEngine
 
 
+
 def setup_logger() -> logging.Logger:
-    """Creates a basic console logger for the assistant."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(message)s",
@@ -17,12 +21,6 @@ def setup_logger() -> logging.Logger:
 
 
 class NotificationDeduplicator:
-    """
-    Basic deduplicator based on recent notification keys.
-
-    Keeps only the most recent keys in memory.
-    """
-
     def __init__(self, max_size: int = 100):
         self._recent = deque(maxlen=max_size)
         self._recent_set: set[tuple[str, str, str]] = set()
@@ -33,7 +31,6 @@ class NotificationDeduplicator:
         if key in self._recent_set:
             return True
 
-        # If deque is full, remove old key from set before appending new one.
         if len(self._recent) == self._recent.maxlen:
             oldest = self._recent[0]
             self._recent_set.discard(oldest)
@@ -47,20 +44,40 @@ def main() -> None:
     logger = setup_logger()
     tts = TTSEngine(logger=logger)
     deduplicator = NotificationDeduplicator()
-    listener = LinuxNotificationListener(logger=logger)
+    listener = create_notification_listener(logger=logger)
+    rest_manager = RestModeManager(logger=logger)
 
-    logger.info("Assistant started. Listening for all Linux notifications...")
+    logger.info("Assistant started. Listening for notifications in background...")
+    
+    def _finalize_resume_window() -> None:
+        history = rest_manager.finalize_resume_collection()
+        tts.speak(format_rest_summary(history))
+
+    def on_resume_from_suspend() -> None:
+        rest_manager.start_resume_collection()
+        threading.Timer(RESUME_COLLECTION_SECONDS, _finalize_resume_window).start()
+
+    monitor = SuspendGapMonitor(on_resume=on_resume_from_suspend, logger=logger)
+    monitor.start()
+
+
 
     def handle_notification(notification: NotificationData) -> None:
-        # Extra guard: ignore empty messages.
         if not notification.message.strip():
             logger.info("Skipped empty notification from %s", notification.app_name)
             return
 
-        # Basic duplicate prevention.
         if deduplicator.is_duplicate(notification):
             logger.info(
                 "Skipped duplicate notification | app=%s sender=%s",
+                notification.app_name,
+                notification.sender,
+            )
+            return
+        
+        if rest_manager.capture_or_none(notification):
+            logger.info(
+                "Captured for resume summary | app=%s sender=%s",
                 notification.app_name,
                 notification.sender,
             )
@@ -73,11 +90,9 @@ def main() -> None:
             notification.message,
         )
 
-        text = format_speech(notification)
-        tts.speak(text)
+        tts.speak(format_speech(notification))
 
     listener.start(handle_notification)
-
 
 if __name__ == "__main__":
     main()

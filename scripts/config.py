@@ -44,14 +44,22 @@ DEDUP_TTL_SECONDS = 30
 # VOICE SETTINGS
 # =========================
 # "light" = TTS local leve
-# "clone" = futuro uso com reference.wav
+# "clone" = clona a voz com reference.wav
 VOICE_MODE = "clone"
 
-# pyttsx3
-TTS_RATE = 170
-TTS_VOLUME = 1.0
+# =========================
+# REST MODE SETTINGS
+# =========================
+# Considera que houve suspensão/repouso quando o processo "acorda" com este atraso
+SUSPEND_GAP_SECONDS = 45
+# Janela após retorno do repouso para coletar notificações pendentes
+RESUME_COLLECTION_SECONDS = 12
 
-# Frase base
+# =========================
+# FRASES
+# =========================
 INTRO_TEMPLATE = "Senhor {user}... há uma nova mensagem de {sender}."
 MESSAGE_TEMPLATE = "Dizendo: {message}"
 DISCREET_TEMPLATE = "Senhor {user}... nova mensagem de {sender}."
+REST_SUMMARY_TEMPLATE = "Senhor {user}, enquanto esteve fora, tiveram {num_notificacao} notificações."
+REST_EMPTY_TEMPLATE = "Senhor {user}, não houve nenhuma notificação enquanto esteve fora."
