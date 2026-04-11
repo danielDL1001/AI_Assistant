@@ -1,45 +1,80 @@
-from scripts.logger_setup import setup_logger
-from scripts.notification_listener import LinuxNotificationListener
-from scripts.filters import should_read_notification
+import logging
+from collections import deque
+
 from scripts.formatter import format_speech
+from scripts.models import NotificationData
+from scripts.notification_listener import LinuxNotificationListener
 from scripts.tts_engine import TTSEngine
-from scripts.deduplicator import Deduplicator
-from scripts.config import ENABLE_DEDUPLICATION
 
 
-def main():
+def setup_logger() -> logging.Logger:
+    """Creates a basic console logger for the assistant."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+    )
+    return logging.getLogger("assistant")
+
+
+class NotificationDeduplicator:
+    """
+    Basic deduplicator based on recent notification keys.
+
+    Keeps only the most recent keys in memory.
+    """
+
+    def __init__(self, max_size: int = 100):
+        self._recent = deque(maxlen=max_size)
+        self._recent_set: set[tuple[str, str, str]] = set()
+
+    def is_duplicate(self, notification: NotificationData) -> bool:
+        key = notification.dedup_key()
+
+        if key in self._recent_set:
+            return True
+
+        # If deque is full, remove old key from set before appending new one.
+        if len(self._recent) == self._recent.maxlen:
+            oldest = self._recent[0]
+            self._recent_set.discard(oldest)
+
+        self._recent.append(key)
+        self._recent_set.add(key)
+        return False
+
+
+def main() -> None:
     logger = setup_logger()
-    tts = TTSEngine()
-    deduplicator = Deduplicator()
+    tts = TTSEngine(logger=logger)
+    deduplicator = NotificationDeduplicator()
+    listener = LinuxNotificationListener(logger=logger)
 
-    listener = LinuxNotificationListener()
+    logger.info("Assistant started. Listening for all Linux notifications...")
 
-    logger.info("Assistente iniciada (modo Linux real).")
+    def handle_notification(notification: NotificationData) -> None:
+        # Extra guard: ignore empty messages.
+        if not notification.message.strip():
+            logger.info("Skipped empty notification from %s", notification.app_name)
+            return
 
-    def handle_notification(notification):
-        print("CHEGOU:", notification)
+        # Basic duplicate prevention.
+        if deduplicator.is_duplicate(notification):
+            logger.info(
+                "Skipped duplicate notification | app=%s sender=%s",
+                notification.app_name,
+                notification.sender,
+            )
+            return
 
-        tts.speak("teste direto")
         logger.info(
-            f"Nova notificação | "
-            f"{notification.app_name} | "
-            f"{notification.sender} | "
-            f"{notification.message}"
+            "New notification | app=%s sender=%s message=%s",
+            notification.app_name,
+            notification.sender,
+            notification.message,
         )
 
-#        if not should_read_notification(notification):
-#            return
-
-#        if ENABLE_DEDUPLICATION:
-#            if deduplicator.is_duplicate(
-#                notification.sender,
-#                notification.message
-#            ):
-#                return
-
-        speech = format_speech(notification)
-        print("FALANDO:", speech)
-        tts.speak(speech)
+        text = format_speech(notification)
+        tts.speak(text)
 
     listener.start(handle_notification)
 

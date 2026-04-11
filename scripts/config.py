@@ -45,7 +45,7 @@ DEDUP_TTL_SECONDS = 30
 # =========================
 # "light" = TTS local leve
 # "clone" = futuro uso com reference.wav
-VOICE_MODE = "light"
+VOICE_MODE = "clone"
 
 # pyttsx3
 TTS_RATE = 170
