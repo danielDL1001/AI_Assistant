@@ -8,6 +8,7 @@ from scripts.formatter import format_rest_summary, format_speech
 
 from scripts.models import NotificationData
 from scripts.notification_listener import create_notification_listener
+from scripts.rest_mode import RestModeManager, SuspendGapMonitor
 from scripts.tts_engine import TTSEngine
 
 
@@ -57,7 +58,11 @@ def main() -> None:
         rest_manager.start_resume_collection()
         threading.Timer(RESUME_COLLECTION_SECONDS, _finalize_resume_window).start()
 
-    monitor = SuspendGapMonitor(on_resume=on_resume_from_suspend, logger=logger)
+    monitor = SuspendGapMonitor(
+        on_resume=on_resume_from_suspend,
+        logger=logger,
+        threshold_seconds=SUSPEND_GAP_SECONDS,
+    )
     monitor.start()
 
 
