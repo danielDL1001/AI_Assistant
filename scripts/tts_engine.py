@@ -12,6 +12,27 @@ from TTS.config.shared_configs import BaseDatasetConfig
 from scripts.config import REFERENCE_AUDIO_PATH, VOICE_MODE
 
 
+import multiprocessing
+
+def detect_best_tts_model(logger=None):
+    cpu_count = multiprocessing.cpu_count()
+
+    if torch.cuda.is_available():
+        total_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+
+        if total_mem >= 6:
+            return "xtts"
+        elif total_mem >= 3:
+            return "vits"
+
+    # CPU-based decision
+    if cpu_count >= 8:
+        return "vits"  # CPU forte aguenta
+    else:
+        return "light"  # CPU comum → seguro
+
+    # 🔥 FORÇA VITS em vez de light
+    return "light"
 
 class TTSEngine:
     """Thread-safe TTS engine that always speaks in background."""
@@ -20,22 +41,38 @@ class TTSEngine:
         self.logger = logger
         self._queue: queue.Queue[str] = queue.Queue()
         self._worker = threading.Thread(target=self._worker_loop, daemon=True)
-        if VOICE_MODE == "clone":
+        mode = detect_best_tts_model(self.logger)
+
+        if mode == "xtts":
             if self.logger:
-                self.logger.info("Loading XTTS voice cloning model...")
+                self.logger.info("Usando XTTS (GPU forte detectada)")
+
             torch.serialization.add_safe_globals([
                 XttsConfig,
                 XttsAudioConfig,
                 BaseDatasetConfig
             ])
+
             self.tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
             self.engine = None
-        else:
-            import pyttsx3
+            self.mode = "clone"
 
+        elif mode == "vits":
+            if self.logger:
+                self.logger.info("Usando VITS (modo equilibrado)")
+
+            self.tts = TTS("tts_models/pt/cv/vits")
+            self.engine = None
+            self.mode = "vits"
+
+        else:
+            if self.logger:
+                self.logger.info("Usando modo leve (pyttsx3)")
+
+            import pyttsx3
             self.engine = pyttsx3.init()
             self.tts = None
-
+            self.mode = "light"
         self._worker.start()
 
     def speak(self, text: str) -> None:
@@ -47,13 +84,29 @@ class TTSEngine:
         while True:
             text = self._queue.get()
             try:
-                if VOICE_MODE == "clone":
+                if self.mode == "clone":
                     self._speak_clone(text)
+                elif self.mode == "vits":
+                    self._speak_vits(text)
                 else:
                     self._speak_light(text)
-            except Exception as exc:  # pragma: no cover - defensive path
+
+            except Exception as exc:
                 if self.logger:
-                    self.logger.exception("TTS failed for text=%s | error=%s", text, exc)
+                    self.logger.exception(
+                        "TTS failed for text=%s | error=%s", text, exc
+                    )
+
+                # 🔥 fallback automático se der erro
+                if self.mode != "light":
+                    if self.logger:
+                        self.logger.warning("Fallback para modo leve (pyttsx3)")
+
+                    import pyttsx3
+                    self.engine = pyttsx3.init()
+                    self.tts = None
+                    self.mode = "light"
+
             finally:
                 self._queue.task_done()
 
@@ -83,6 +136,26 @@ class TTSEngine:
         except OSError:
             if self.logger:
                 self.logger.warning("Could not remove temporary audio file: %s", temp_path)
+        
+    def _speak_vits(self, text: str) -> None:
+        if not self.tts:
+            return
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+            temp_path = Path(temp_file.name)
+
+        self.tts.tts_to_file(
+            text=text,
+            file_path=str(temp_path)
+        )
+
+        self._play_audio(temp_path)
+
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            if self.logger:
+                self.logger.warning("Erro ao remover arquivo temporário")
 
     def _play_audio(self, wav_path: Path) -> None:
         system = platform.system().lower()
