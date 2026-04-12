@@ -162,9 +162,10 @@ weasel==1.0.0
 Werkzeug==3.1.8
 wrapt==2.1.2
 yarl==1.23.0
-#####################
+
+# Baixe as versões específicas de numpy, torch, TTS, transformers e pyttsx3 Respectivamente um por um:
+numpy==1.22.0
+torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
 TTS==0.22.0
 transformers==4.36.2
 pyttsx3==2.99
-torch==2.5.1
-numpy ==2.3.0
