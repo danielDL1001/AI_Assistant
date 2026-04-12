@@ -15,24 +15,21 @@ from scripts.config import REFERENCE_AUDIO_PATH, VOICE_MODE
 import multiprocessing
 
 def detect_best_tts_model(logger=None):
-    cpu_count = multiprocessing.cpu_count()
-
     if torch.cuda.is_available():
         total_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        if logger:
+            logger.info("GPU detectada com %.2f GB de VRAM", total_mem)
 
         if total_mem >= 6:
             return "xtts"
         elif total_mem >= 3:
-            return "vits"
+            return "tacotron"
+        return "vits"
 
-    # CPU-based decision
-    if cpu_count >= 8:
-        return "vits"  # CPU forte aguenta
-    else:
-        return "light"  # CPU comum → seguro
-
-    # 🔥 FORÇA VITS em vez de light
-    return "light"
+    cpu_count = multiprocessing.cpu_count()
+    if logger:
+        logger.info("Sem GPU CUDA, usando fallback por CPU (%s núcleos)", cpu_count)
+    return "vits"
 
 class TTSEngine:
     """Thread-safe TTS engine that always speaks in background."""
@@ -59,11 +56,19 @@ class TTSEngine:
 
         elif mode == "vits":
             if self.logger:
-                self.logger.info("Usando VITS (modo equilibrado)")
+                self.logger.info("Usando VITS PT (GPU fraca ou sem GPU)")
 
             self.tts = TTS("tts_models/pt/cv/vits")
             self.engine = None
             self.mode = "vits"
+
+        elif mode == "tacotron":
+            if self.logger:
+                self.logger.info("Usando Tacotron2-DDC (GPU média detectada)")
+
+            self.tts = TTS("tts_models/en/ljspeech/tacotron2-DDC")
+            self.engine = None
+            self.mode = "tacotron"
 
         else:
             if self.logger:
@@ -86,6 +91,8 @@ class TTSEngine:
             try:
                 if self.mode == "clone":
                     self._speak_clone(text)
+                elif self.mode == "tacotron":
+                    self._speak_tacotron(text)
                 elif self.mode == "vits":
                     self._speak_vits(text)
                 else:
@@ -138,6 +145,26 @@ class TTSEngine:
                 self.logger.warning("Could not remove temporary audio file: %s", temp_path)
         
     def _speak_vits(self, text: str) -> None:
+        if not self.tts:
+            return
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+            temp_path = Path(temp_file.name)
+
+        self.tts.tts_to_file(
+            text=text,
+            file_path=str(temp_path)
+        )
+
+        self._play_audio(temp_path)
+
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            if self.logger:
+                self.logger.warning("Erro ao remover arquivo temporário")
+
+    def _speak_tacotron(self, text: str) -> None:
         if not self.tts:
             return
 
